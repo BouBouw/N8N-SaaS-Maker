@@ -13,6 +13,11 @@ import Library from "./views/Dashboard/Library";
 import Api from "./views/Dashboard/Api";
 import Settings from "./views/Dashboard/Settings";
 import Documentation from "./views/Dashboard/Documentation";
+import AdministrationLayout from "./components/layouts/Administration";
+import AdminDashboard from "./views/Admin/Dashboard";
+import AdminUsers from "./views/Admin/Users";
+import AdminInstances from "./views/Admin/Instances";
+import AdminWorkflows from "./views/Admin/Workflows";
 
 export const router = createBrowserRouter([
     {
@@ -64,6 +69,28 @@ export const router = createBrowserRouter([
             {
                 path: "settings",
                 element: <Settings />
+            }
+        ]
+    },
+    {
+        path: "/administration",
+        element: <AdministrationLayout />,
+        children: [
+            {
+                index: true,
+                element: <AdminDashboard />
+            },
+            {
+                path: "users",
+                element: <AdminUsers />
+            },
+            {
+                path: "instances",
+                element: <AdminInstances />
+            },
+            {
+                path: "workflows",
+                element: <AdminWorkflows />
             }
         ]
     }

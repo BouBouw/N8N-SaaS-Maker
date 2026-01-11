@@ -22,14 +22,31 @@ passport.use(new DiscordStrategy({
     scope: ['identify', 'email']
 }, async (accessToken, refreshToken, profile, done) => {
     try {
-        // Check if user exists
-        const [existingUsers] = await pool.query(
+        // Check if user exists by discord_id
+        const [existingByDiscord] = await pool.query(
             'SELECT * FROM users WHERE discord_id = ?',
             [profile.id]
         );
 
-        if (existingUsers.length > 0) {
-            return done(null, existingUsers[0]);
+        if (existingByDiscord.length > 0) {
+            return done(null, existingByDiscord[0]);
+        }
+
+        // Check if user exists by email
+        const [existingByEmail] = await pool.query(
+            'SELECT * FROM users WHERE email = ?',
+            [profile.email]
+        );
+
+        if (existingByEmail.length > 0) {
+            // User exists with this email but no discord_id - link Discord account
+            await pool.query(
+                'UPDATE users SET discord_id = ?, avatar = ?, email_verified = ? WHERE id = ?',
+                [profile.id, profile.avatar, profile.verified, existingByEmail[0].id]
+            );
+
+            const [updatedUser] = await pool.query('SELECT * FROM users WHERE id = ?', [existingByEmail[0].id]);
+            return done(null, updatedUser[0]);
         }
 
         // Create new user

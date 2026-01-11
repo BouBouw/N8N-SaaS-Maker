@@ -103,6 +103,7 @@ app.use('/api-keys', require('./routes/apiKeys'));
 app.use('/discord', require('./routes/discord'));
 app.use('/stripe', require('./routes/stripe'));
 app.use('/webhooks', require('./routes/webhooks'));
+app.use('/admin', require('./routes/admin'));
 
 // Public API routes (with API key authentication)
 app.use('/api/v1', require('./routes/api'));
