@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS n8n_instances (
     uuid VARCHAR(36) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
     subdomain VARCHAR(255) UNIQUE NOT NULL,
+    public_url VARCHAR(500),
     container_id VARCHAR(255) UNIQUE,
     container_name VARCHAR(255) UNIQUE,
     docker_port INT,
@@ -318,6 +319,7 @@ CREATE TABLE IF NOT EXISTS resources (
     views_count INT DEFAULT 0,
     is_featured BOOLEAN DEFAULT FALSE,
     is_public BOOLEAN DEFAULT TRUE,
+    forum_thread_id VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -326,6 +328,7 @@ CREATE TABLE IF NOT EXISTS resources (
     INDEX idx_user_id (user_id),
     INDEX idx_created_at (created_at),
     INDEX idx_is_featured (is_featured),
+    INDEX idx_forum_thread_id (forum_thread_id),
     FULLTEXT INDEX idx_search (title, description)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

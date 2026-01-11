@@ -290,15 +290,33 @@ class DockerService {
     }
 
     /**
-     * Generate a random password
+     * Generate a random password that meets N8N requirements
+     * - At least 1 uppercase letter
+     * - At least 1 lowercase letter
+     * - At least 1 number
+     * - At least 1 special character
      */
     generatePassword(length = 16) {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+        const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+        const numbers = '0123456789';
+        const special = '!@#$%^&*';
+        const allChars = uppercase + lowercase + numbers + special;
+        
+        // Ensure password contains at least one of each required type
         let password = '';
-        for (let i = 0; i < length; i++) {
-            password += chars.charAt(Math.floor(Math.random() * chars.length));
+        password += uppercase.charAt(Math.floor(Math.random() * uppercase.length));
+        password += lowercase.charAt(Math.floor(Math.random() * lowercase.length));
+        password += numbers.charAt(Math.floor(Math.random() * numbers.length));
+        password += special.charAt(Math.floor(Math.random() * special.length));
+        
+        // Fill the rest randomly
+        for (let i = password.length; i < length; i++) {
+            password += allChars.charAt(Math.floor(Math.random() * allChars.length));
         }
-        return password;
+        
+        // Shuffle the password to avoid predictable pattern
+        return password.split('').sort(() => Math.random() - 0.5).join('');
     }
 
     /**

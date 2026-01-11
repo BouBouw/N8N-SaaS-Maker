@@ -4,6 +4,7 @@ const dockerService = require('../services/dockerService');
 const activityService = require('../services/activityService');
 const memberService = require('../services/memberService');
 const emailService = require('../services/emailService');
+const nginxService = require('../services/nginxService');
 const { isAuthenticated } = require('../middleware/auth');
 
 // Helper function to get user-friendly error messages
@@ -373,19 +374,54 @@ router.post('/', isAuthenticated, async (req, res) => {
             // Log activity
             await activityService.logInstanceCreated(req.session.userId, instanceId, name);
 
-            // Send email with instance credentials
+            // Configure Nginx subdomain with SSL automatically
+            console.log(`🌐 Configuration automatique du sous-domaine: ${subdomain}.logicai.fr`);
             try {
-                await emailService.sendInstanceCreatedEmail(user.email, user.name, {
-                    instanceName: name,
-                    instanceUrl: `http://localhost:${containerInfo.port}`,
-                    email: user.email,
-                    password: containerInfo.password,
-                    port: containerInfo.port
-                });
-                console.log(`📧 Credentials email sent to ${user.email}`);
-            } catch (emailError) {
-                console.error('❌ Error sending credentials email:', emailError);
-                // Don't fail the instance creation if email fails
+                const nginxResult = await nginxService.setupSubdomain(subdomain, containerInfo.port);
+                
+                if (nginxResult.success) {
+                    console.log(`✅ Sous-domaine configuré: ${nginxResult.url}`);
+                    
+                    // Update instance with public URL
+                    await pool.query(
+                        'UPDATE n8n_instances SET public_url = ? WHERE id = ?',
+                        [nginxResult.url, instanceId]
+                    );
+
+                    // Send email with instance credentials (with public URL)
+                    try {
+                        await emailService.sendInstanceCreatedEmail(user.email, user.name, {
+                            instanceName: name,
+                            instanceUrl: nginxResult.url,
+                            email: user.email,
+                            password: containerInfo.password,
+                            port: containerInfo.port
+                        });
+                        console.log(`📧 Credentials email sent to ${user.email}`);
+                    } catch (emailError) {
+                        console.error('❌ Error sending credentials email:', emailError);
+                    }
+                } else {
+                    console.error(`❌ Échec de la configuration du sous-domaine: ${nginxResult.error}`);
+                    console.error('   L\'instance reste accessible via le port local');
+                    
+                    // Send email with localhost URL as fallback
+                    try {
+                        await emailService.sendInstanceCreatedEmail(user.email, user.name, {
+                            instanceName: name,
+                            instanceUrl: `http://localhost:${containerInfo.port}`,
+                            email: user.email,
+                            password: containerInfo.password,
+                            port: containerInfo.port
+                        });
+                        console.log(`📧 Credentials email sent to ${user.email} (localhost URL)`);
+                    } catch (emailError) {
+                        console.error('❌ Error sending credentials email:', emailError);
+                    }
+                }
+            } catch (nginxError) {
+                console.error('❌ Erreur critique lors de la configuration Nginx:', nginxError);
+                // Don't fail the instance creation, just log the error
             }
 
             console.log(`✅ Instance ${name} created successfully`);
@@ -596,6 +632,23 @@ router.delete('/:id', isAuthenticated, async (req, res) => {
                 await dockerService.deleteContainer(instance.container_id);
             } catch (error) {
                 console.error('Error deleting container:', error);
+            }
+        }
+
+        // Remove Nginx subdomain configuration
+        if (instance.subdomain) {
+            try {
+                console.log(`🗑️  Suppression du sous-domaine: ${instance.subdomain}.logicai.fr`);
+                const nginxResult = await nginxService.removeSubdomain(instance.subdomain);
+                
+                if (nginxResult.success) {
+                    console.log(`✅ Sous-domaine supprimé avec succès`);
+                } else {
+                    console.error(`⚠️  Échec de la suppression du sous-domaine: ${nginxResult.error}`);
+                }
+            } catch (nginxError) {
+                console.error('❌ Erreur lors de la suppression du sous-domaine:', nginxError);
+                // Don't fail the instance deletion if subdomain removal fails
             }
         }
 
