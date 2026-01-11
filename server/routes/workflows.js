@@ -98,120 +98,216 @@ router.post('/import', isAuthenticated, async (req, res) => {
 
         // Login to N8N first
         let cookies = '';
-        try {
-            console.log('\n🔐 === AUTHENTIFICATION N8N ===');
-            console.log('📤 POST', `${n8nUrl}/rest/login`);
-            console.log('📧 Email:', userEmail);
-            
-            const loginResponse = await axios.post(`${n8nUrl}/rest/login`, {
-                emailOrLdapLoginId: userEmail,
-                password: password
-            }, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 10000,
-                validateStatus: () => true
-            });
+        let loginAttempts = 0;
+        const maxLoginAttempts = 2;
 
-            console.log('📥 Status:', loginResponse.status);
-            console.log('🍪 Cookies reçus:', loginResponse.headers['set-cookie'] ? 'OUI' : 'NON');
-
-            if (loginResponse.status === 200 && loginResponse.headers['set-cookie']) {
-                cookies = loginResponse.headers['set-cookie'].join('; ');
-                console.log('✅ Authentifié sur N8N');
-                console.log('🍪 Cookie string length:', cookies.length);
-            } else {
-                console.log('❌ Échec authentification N8N');
-                console.log('📊 Response data:', JSON.stringify(loginResponse.data));
-                return res.status(401).json({ 
-                    error: 'Échec de l\'authentification N8N',
-                    requiresAuth: true,
-                    instanceUrl: n8nUrl
+        while (loginAttempts < maxLoginAttempts) {
+            try {
+                console.log(`\n🔐 === AUTHENTIFICATION N8N (Tentative ${loginAttempts + 1}/${maxLoginAttempts}) ===`);
+                console.log('📤 POST', `${n8nUrl}/rest/login`);
+                console.log('📧 Email:', userEmail);
+                
+                const loginResponse = await axios.post(`${n8nUrl}/rest/login`, {
+                    email: userEmail,
+                    password: password
+                }, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 10000,
+                    validateStatus: () => true
                 });
+
+                console.log('📥 Status:', loginResponse.status);
+                console.log('🍪 Cookies reçus:', loginResponse.headers['set-cookie'] ? 'OUI' : 'NON');
+
+                if (loginResponse.status === 200 && loginResponse.headers['set-cookie']) {
+                    cookies = loginResponse.headers['set-cookie'].join('; ');
+                    console.log('✅ Authentifié sur N8N');
+                    console.log('🍪 Cookie string length:', cookies.length);
+                    break; // Success, exit loop
+                } else {
+                    console.log('❌ Échec authentification N8N');
+                    console.log('📊 Response data:', JSON.stringify(loginResponse.data));
+                    loginAttempts++;
+                    
+                    if (loginAttempts >= maxLoginAttempts) {
+                        return res.status(401).json({ 
+                            error: 'Échec de l\'authentification N8N après plusieurs tentatives',
+                            requiresAuth: true,
+                            instanceUrl: n8nUrl
+                        });
+                    }
+                    
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            } catch (loginError) {
+                console.log('❌ Erreur lors de la connexion N8N');
+                console.error('💥 Error:', loginError.message);
+                loginAttempts++;
+                
+                if (loginAttempts >= maxLoginAttempts) {
+                    return res.status(401).json({ 
+                        error: 'Impossible de se connecter à N8N',
+                        requiresAuth: true,
+                        instanceUrl: n8nUrl
+                    });
+                }
+                
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
-        } catch (loginError) {
-            console.log('❌ Erreur lors de la connexion N8N');
-            console.error('💥 Error:', loginError.message);
-            console.error('🔍 Stack:', loginError.stack);
-            return res.status(401).json({ 
-                error: 'Impossible de se connecter à N8N',
-                requiresAuth: true,
-                instanceUrl: n8nUrl
-            });
         }
         
         // Import workflow to N8N
-        try {
-            console.log('\n📤 === IMPORT WORKFLOW ===');
-            console.log('🌐 POST', `${n8nUrl}/rest/workflows`);
-            console.log('📋 Workflow name:', workflowData.name || 'Sans nom');
-            console.log('🍪 Using cookies:', cookies.substring(0, 50) + '...');
-            
-            const response = await axios.post(`${n8nUrl}/rest/workflows`, workflowData, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Cookie': cookies
-                },
-                timeout: 10000,
-                validateStatus: (status) => status < 500
-            });
+        let importAttempts = 0;
+        const maxImportAttempts = 2;
+        let lastError = null;
 
-            console.log('📥 Status:', response.status);
-            console.log('📊 Response data:', JSON.stringify(response.data).substring(0, 200));
+        while (importAttempts < maxImportAttempts) {
+            try {
+                console.log(`\n📤 === IMPORT WORKFLOW (Tentative ${importAttempts + 1}/${maxImportAttempts}) ===`);
+                console.log('🌐 POST', `${n8nUrl}/rest/workflows`);
+                console.log('📋 Workflow name:', workflowData.name || 'Sans nom');
+                console.log('🍪 Using cookies:', cookies.substring(0, 50) + '...');
+                
+                const response = await axios.post(`${n8nUrl}/rest/workflows`, workflowData, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Cookie': cookies
+                    },
+                    timeout: 15000,
+                    validateStatus: (status) => status < 500
+                });
 
-            if (response.status === 200 || response.status === 201) {
-                const workflowId = response.data?.data?.id || response.data?.id;
-                console.log('✅ Workflow importé avec succès!');
-                console.log('🆔 Workflow ID:', workflowId);
+                console.log('📥 Status:', response.status);
+                console.log('📊 Response data:', JSON.stringify(response.data).substring(0, 200));
+
+                if (response.status === 200 || response.status === 201) {
+                    const workflowId = response.data?.data?.id || response.data?.id;
+                    console.log('✅ Workflow importé avec succès!');
+                    console.log('🆔 Workflow ID:', workflowId);
+                    
+                    // Build workflow URL
+                    const workflowUrl = `${n8nUrl}/workflow/${workflowId}`;
+                    console.log('🔗 Workflow URL:', workflowUrl);
+                    console.log('\n🎉 === FIN IMPORT WORKFLOW (SUCCÈS) ===\n');
+                    
+                    return res.json({
+                        success: true,
+                        message: 'Workflow importé avec succès',
+                        workflow: response.data,
+                        workflowUrl: workflowUrl,
+                        workflowId: workflowId
+                    });
+                } else if (response.status === 401) {
+                    console.log('❌ Authentification expirée, réessai...');
+                    importAttempts++;
+                    
+                    if (importAttempts >= maxImportAttempts) {
+                        return res.status(401).json({ 
+                            error: 'Authentification requise sur l\'instance N8N',
+                            requiresAuth: true,
+                            instanceUrl: n8nUrl
+                        });
+                    }
+                    
+                    // Re-authenticate before retry
+                    console.log('🔄 Réauthentification...');
+                    const reloginResponse = await axios.post(`${n8nUrl}/rest/login`, {
+                        email: userEmail,
+                        password: password
+                    }, {
+                        headers: { 'Content-Type': 'application/json' },
+                        timeout: 10000,
+                        validateStatus: () => true
+                    });
+
+                    if (reloginResponse.status === 200 && reloginResponse.headers['set-cookie']) {
+                        cookies = reloginResponse.headers['set-cookie'].join('; ');
+                        console.log('✅ Réauthentifié');
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        continue; // Retry import
+                    } else {
+                        return res.status(401).json({ 
+                            error: 'Échec de la réauthentification',
+                            requiresAuth: true,
+                            instanceUrl: n8nUrl
+                        });
+                    }
+                } else if (response.status === 400) {
+                    console.log('❌ Requête invalide (400)');
+                    console.log('📊 Details:', JSON.stringify(response.data));
+                    return res.status(400).json({ 
+                        error: response.data?.message || 'Format de workflow invalide',
+                        details: response.data
+                    });
+                } else {
+                    console.log('❌ Échec de l\'import');
+                    console.log('📊 Details:', response.data);
+                    return res.status(400).json({ 
+                        error: 'Échec de l\'import du workflow',
+                        details: response.data
+                    });
+                }
+            } catch (error) {
+                console.log(`❌ Erreur lors de l'import du workflow (tentative ${importAttempts + 1})`);
+                console.error('💥 Error:', error.message);
+                lastError = error;
+                importAttempts++;
                 
-                // Build workflow URL
-                const workflowUrl = `${n8nUrl}/workflow/${workflowId}`;
-                console.log('🔗 Workflow URL:', workflowUrl);
-                console.log('\n🎉 === FIN IMPORT WORKFLOW (SUCCÈS) ===\n');
+                if (error.response) {
+                    console.log('📊 Response status:', error.response.status);
+                    console.log('📊 Response data:', JSON.stringify(error.response.data));
+                    
+                    if (error.response.status === 401 && importAttempts < maxImportAttempts) {
+                        console.log('🔄 Réauthentification après erreur 401...');
+                        try {
+                            const reloginResponse = await axios.post(`${n8nUrl}/rest/login`, {
+                                email: userEmail,
+                                password: password
+                            }, {
+                                headers: { 'Content-Type': 'application/json' },
+                                timeout: 10000,
+                                validateStatus: () => true
+                            });
+
+                            if (reloginResponse.status === 200 && reloginResponse.headers['set-cookie']) {
+                                cookies = reloginResponse.headers['set-cookie'].join('; ');
+                                console.log('✅ Réauthentifié');
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                continue; // Retry import
+                            }
+                        } catch (reloginError) {
+                            console.log('❌ Échec de la réauthentification');
+                        }
+                    }
+                    
+                    if (error.response.status === 400) {
+                        return res.status(400).json({ 
+                            error: error.response.data?.message || 'Format de workflow invalide',
+                            details: error.response.data
+                        });
+                    }
+                }
                 
-                return res.json({
-                    success: true,
-                    message: 'Workflow importé avec succès',
-                    workflow: response.data,
-                    workflowUrl: workflowUrl,
-                    workflowId: workflowId
-                });
-            } else if (response.status === 401) {
-                console.log('❌ Authentification expirée');
-                return res.status(401).json({ 
-                    error: 'Authentification requise sur l\'instance N8N',
-                    requiresAuth: true,
-                    instanceUrl: n8nUrl
-                });
-            } else {
-                console.log('❌ Échec de l\'import');
-                console.log('📊 Details:', response.data);
-                return res.status(400).json({ 
-                    error: 'Échec de l\'import du workflow',
-                    details: response.data
-                });
+                if (importAttempts >= maxImportAttempts) {
+                    if (lastError?.response?.status === 401) {
+                        return res.status(401).json({ 
+                            error: 'Authentification requise. Veuillez vous connecter à votre instance N8N.',
+                            requiresAuth: true,
+                            instanceUrl: n8nUrl
+                        });
+                    }
+                    
+                    return res.status(500).json({ 
+                        error: 'Erreur lors de l\'import du workflow après plusieurs tentatives',
+                        details: lastError?.message
+                    });
+                }
+                
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
-        } catch (error) {
-            console.log('❌ Erreur lors de l\'import du workflow');
-            console.error('💥 Error:', error.message);
-            console.error('🔍 Stack:', error.stack);
-            
-            if (error.response) {
-                console.log('📊 Response status:', error.response.status);
-                console.log('📊 Response data:', error.response.data);
-            }
-            
-            if (error.response && error.response.status === 401) {
-                return res.status(401).json({ 
-                    error: 'Authentification requise. Veuillez vous connecter à votre instance N8N.',
-                    requiresAuth: true,
-                    instanceUrl: n8nUrl
-                });
-            }
-            
-            return res.status(500).json({ 
-                error: 'Erreur lors de l\'import du workflow',
-                details: error.message
-            });
         }
 
     } catch (error) {

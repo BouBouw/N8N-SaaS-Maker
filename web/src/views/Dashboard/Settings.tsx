@@ -7,7 +7,6 @@ import {
     Camera,
     Save,
     Bell,
-    Moon,
     Globe,
     Shield,
     CreditCard,
@@ -15,7 +14,6 @@ import {
     AlertTriangle,
     Eye,
     EyeOff,
-    Sparkles,
     Plug,
     Link2,
     CheckCircle2,
@@ -26,12 +24,13 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { Link } from 'react-router';
-import { getAvatarUrl, getAvatarInitials } from '../../utils/avatar';
+import { getAvatarInitials } from '../../utils/avatar';
 import { stripe, type Subscription, type Payment } from '../../api/stripe';
 import { instancesApi } from '../../api/instances';
+import { api } from '../../api/auth';
 
 export default function Settings() {
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
     const { showToast } = useToast();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -39,18 +38,36 @@ export default function Settings() {
     const [loading, setLoading] = useState(false);
     const [discordConnection, setDiscordConnection] = useState<any>(null);
     const [loadingDiscord, setLoadingDiscord] = useState(false);
+    const [isDiscordAccount, setIsDiscordAccount] = useState(false);
     
     // Subscription data
     const [subscription, setSubscription] = useState<Subscription | null>(null);
     const [payments, setPayments] = useState<Payment[]>([]);
     const [loadingSubscription, setLoadingSubscription] = useState(false);
     
+    // Confirmation modal
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        isDanger?: boolean;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => {},
+        isDanger: false
+    });
+    
     // Profile form
     const [profileForm, setProfileForm] = useState({
         name: user?.name || '',
         email: user?.email || '',
-        avatar: user?.avatar || ''
+        avatar: user?.avatar || '',
+        customAvatar: null as File | null
     });
+    const [syncingAvatar, setSyncingAvatar] = useState(false);
 
     // Password form
     const [passwordForm, setPasswordForm] = useState({
@@ -89,11 +106,51 @@ export default function Settings() {
     const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
+            // Check file size (max 2MB)
+            if (file.size > 2 * 1024 * 1024) {
+                showToast('danger', 'L\'image ne doit pas dépasser 2MB');
+                return;
+            }
+            
             const reader = new FileReader();
             reader.onloadend = () => {
-                setProfileForm(prev => ({ ...prev, avatar: reader.result as string }));
+                console.log('Avatar loaded:', reader.result);
+                setProfileForm(prev => ({ 
+                    ...prev, 
+                    avatar: reader.result as string,
+                    customAvatar: file
+                }));
+                showToast('success', 'Image chargée avec succès');
+            };
+            reader.onerror = () => {
+                console.error('Error reading file');
+                showToast('danger', 'Erreur lors de la lecture du fichier');
             };
             reader.readAsDataURL(file);
+        }
+    };
+
+    const handleSyncDiscordAvatar = async () => {
+        if (!user?.discord_id) {
+            showToast('warning', 'Connectez d\'abord votre compte Discord');
+            return;
+        }
+
+        setSyncingAvatar(true);
+        try {
+            const data = await api.syncDiscordAvatar();
+            
+            if (data.success) {
+                showToast('success', 'Avatar Discord synchronisé');
+                window.location.reload();
+            } else {
+                showToast('danger', data.error || 'Erreur lors de la synchronisation');
+            }
+        } catch (error) {
+            console.error('Error syncing Discord avatar:', error);
+            showToast('danger', 'Erreur lors de la synchronisation');
+        } finally {
+            setSyncingAvatar(false);
         }
     };
 
@@ -101,11 +158,30 @@ export default function Settings() {
         e.preventDefault();
         setLoading(true);
         
-        // Simulate API call
-        setTimeout(() => {
+        try {
+            const formData = new FormData();
+            formData.append('name', profileForm.name);
+            formData.append('email', profileForm.email);
+            
+            if (profileForm.customAvatar) {
+                formData.append('avatar', profileForm.customAvatar);
+            }
+            
+            const data = await api.updateProfile(formData);
+            
+            if (data.success) {
+                showToast('success', 'Profil mis à jour avec succès');
+                // Reload user data
+                window.location.reload();
+            } else {
+                showToast('danger', data.error || 'Erreur lors de la mise à jour');
+            }
+        } catch (error) {
+            console.error('Error updating profile:', error);
+            showToast('danger', 'Erreur lors de la mise à jour du profil');
+        } finally {
             setLoading(false);
-            showToast('success', 'Profil mis à jour avec succès');
-        }, 1000);
+        }
     };
 
     const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -123,28 +199,171 @@ export default function Settings() {
 
         setLoading(true);
         
-        // Simulate API call
-        setTimeout(() => {
+        try {
+            const data = await api.updatePassword(
+                passwordForm.currentPassword,
+                passwordForm.newPassword
+            );
+            
+            if (data.success) {
+                // Check if email verification is required (Discord account without password)
+                if (data.requiresEmailVerification) {
+                    showToast('info', '📧 Un email a été envoyé à votre adresse pour créer votre mot de passe. Vous allez être déconnecté.');
+                    // Wait 3 seconds then logout
+                    setTimeout(async () => {
+                        await logout();
+                        window.location.href = '/login';
+                    }, 3000);
+                } else {
+                    showToast('success', 'Mot de passe modifié avec succès');
+                    setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                }
+            } else {
+                showToast('danger', data.error || 'Erreur lors du changement de mot de passe');
+            }
+        } catch (error) {
+            console.error('Error updating password:', error);
+            showToast('danger', 'Erreur lors du changement de mot de passe');
+        } finally {
             setLoading(false);
-            showToast('success', 'Mot de passe modifié avec succès');
-            setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-        }, 1000);
+        }
     };
 
     const handlePreferencesSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         
-        // Simulate API call
-        setTimeout(() => {
+        try {
+            const data = await api.updatePreferences(preferences);
+            
+            if (data.success) {
+                showToast('success', 'Préférences sauvegardées');
+            } else {
+                showToast('danger', data.error || 'Erreur lors de la sauvegarde des préférences');
+            }
+        } catch (error) {
+            console.error('Error updating preferences:', error);
+            showToast('danger', 'Erreur lors de la sauvegarde des préférences');
+        } finally {
             setLoading(false);
-            showToast('success', 'Préférences sauvegardées');
-        }, 1000);
+        }
     };
 
     const handleDeleteAccount = () => {
-        if (window.confirm('⚠️ ATTENTION : Cette action est irréversible. Toutes vos données seront définitivement supprimées. Voulez-vous vraiment continuer ?')) {
-            showToast('danger', 'Fonctionnalité de suppression de compte à implémenter');
+        setConfirmModal({
+            isOpen: true,
+            title: '⚠️ Supprimer le compte',
+            message: 'ATTENTION : Cette action est irréversible. Toutes vos données, instances N8N, workflows et abonnements seront définitivement supprimés. Voulez-vous vraiment continuer ?',
+            isDanger: true,
+            onConfirm: async () => {
+                try {
+                    setLoading(true);
+                    const response = await fetch('http://localhost:3000/api/auth/delete-account', {
+                        method: 'DELETE',
+                        credentials: 'include'
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        showToast('success', '✅ Votre compte a été supprimé définitivement');
+                        setConfirmModal({ ...confirmModal, isOpen: false });
+                        
+                        // Redirect to login after 2 seconds
+                        setTimeout(() => {
+                            window.location.href = '/login';
+                        }, 2000);
+                    } else {
+                        showToast('danger', data.error || 'Erreur lors de la suppression du compte');
+                        setConfirmModal({ ...confirmModal, isOpen: false });
+                    }
+                } catch (error) {
+                    console.error('Error deleting account:', error);
+                    showToast('danger', 'Erreur lors de la suppression du compte');
+                    setConfirmModal({ ...confirmModal, isOpen: false });
+                } finally {
+                    setLoading(false);
+                }
+            }
+        });
+    };
+
+    const handleDeleteAllInstances = () => {
+        setConfirmModal({
+            isOpen: true,
+            title: '🗑️ Supprimer toutes les instances',
+            message: 'Êtes-vous sûr de vouloir supprimer toutes vos instances N8N ? Tous vos workflows et données seront perdus. Cette action est irréversible.',
+            isDanger: true,
+            onConfirm: async () => {
+                try {
+                    setLoading(true);
+                    
+                    // Get all user instances
+                    const instancesResponse = await instancesApi.getInstances();
+                    const instances = instancesResponse.instances || [];
+                    
+                    if (instances.length === 0) {
+                        showToast('info', 'Aucune instance à supprimer');
+                        setConfirmModal({ ...confirmModal, isOpen: false });
+                        return;
+                    }
+
+                    // Delete each instance
+                    let deletedCount = 0;
+                    let failedCount = 0;
+
+                    for (const instance of instances) {
+                        try {
+                            await instancesApi.deleteInstance(instance.id);
+                            deletedCount++;
+                        } catch (error) {
+                            console.error(`Failed to delete instance ${instance.id}:`, error);
+                            failedCount++;
+                        }
+                    }
+
+                    if (deletedCount > 0) {
+                        showToast('success', `✅ ${deletedCount} instance(s) supprimée(s)${failedCount > 0 ? ` (${failedCount} échec(s))` : ''}`);
+                    } else {
+                        showToast('danger', 'Échec de la suppression des instances');
+                    }
+
+                    setConfirmModal({ ...confirmModal, isOpen: false });
+                } catch (error) {
+                    console.error('Error deleting instances:', error);
+                    showToast('danger', 'Erreur lors de la suppression des instances');
+                    setConfirmModal({ ...confirmModal, isOpen: false });
+                } finally {
+                    setLoading(false);
+                }
+            }
+        });
+    };
+
+    const handleResetPreferences = async () => {
+        try {
+            setLoading(true);
+            const defaultPreferences = {
+                emailNotifications: true,
+                workflowNotifications: true,
+                securityAlerts: true,
+                darkMode: true,
+                language: 'fr'
+            };
+
+            const data = await api.updatePreferences(defaultPreferences);
+            
+            if (data.success) {
+                setPreferences(defaultPreferences);
+                showToast('success', '✅ Préférences réinitialisées aux valeurs par défaut');
+            } else {
+                showToast('danger', data.error || 'Erreur lors de la réinitialisation');
+            }
+        } catch (error) {
+            console.error('Error resetting preferences:', error);
+            showToast('danger', 'Erreur lors de la réinitialisation des préférences');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -152,10 +371,7 @@ export default function Settings() {
     const fetchDiscordConnection = async () => {
         try {
             console.log('🔍 Fetching Discord connection...');
-            const response = await fetch('http://localhost:5000/discord/connection', {
-                credentials: 'include'
-            });
-            const data = await response.json();
+            const data = await api.getDiscordConnection();
             console.log('📡 Discord connection data:', data);
             
             if (data.connected) {
@@ -236,21 +452,26 @@ export default function Settings() {
     };
 
     const handleCancelSubscription = async () => {
-        if (!confirm('Êtes-vous sûr de vouloir annuler votre abonnement ? Il restera actif jusqu\'à la fin de la période en cours.')) {
-            return;
-        }
-
-        try {
-            setLoadingSubscription(true);
-            await stripe.cancelSubscription();
-            showToast('success', 'Votre abonnement sera annulé à la fin de la période en cours');
-            fetchSubscriptionData();
-        } catch (error: any) {
-            console.error('Error canceling subscription:', error);
-            showToast('danger', error.response?.data?.error || 'Erreur lors de l\'annulation de l\'abonnement');
-        } finally {
-            setLoadingSubscription(false);
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: 'Annuler l\'abonnement',
+            message: 'Êtes-vous sûr de vouloir annuler votre abonnement ? Il restera actif jusqu\'à la fin de la période en cours.',
+            isDanger: true,
+            onConfirm: async () => {
+                try {
+                    setLoadingSubscription(true);
+                    await stripe.cancelSubscription();
+                    showToast('success', 'Votre abonnement sera annulé à la fin de la période en cours');
+                    fetchSubscriptionData();
+                } catch (error: any) {
+                    console.error('Error canceling subscription:', error);
+                    showToast('danger', error.response?.data?.error || 'Erreur lors de l\'annulation de l\'abonnement');
+                } finally {
+                    setLoadingSubscription(false);
+                    setConfirmModal({ ...confirmModal, isOpen: false });
+                }
+            }
+        });
     };
 
     const handleSyncSubscription = async () => {
@@ -270,10 +491,7 @@ export default function Settings() {
     const handleConnectDiscord = async () => {
         setLoadingDiscord(true);
         try {
-            const response = await fetch('http://localhost:5000/discord/auth-url', {
-                credentials: 'include'
-            });
-            const data = await response.json();
+            const data = await api.fetchDiscordAuthUrl();
             
             if (data.url) {
                 window.location.href = data.url;
@@ -286,29 +504,31 @@ export default function Settings() {
     };
 
     const handleDisconnectDiscord = async () => {
-        if (!window.confirm('Êtes-vous sûr de vouloir déconnecter votre compte Discord ?')) {
-            return;
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: 'Déconnecter Discord',
+            message: 'Êtes-vous sûr de vouloir déconnecter votre compte Discord ?',
+            isDanger: false,
+            onConfirm: async () => {
+                setLoadingDiscord(true);
+                try {
+                    const data = await api.unlinkDiscord();
 
-        setLoadingDiscord(true);
-        try {
-            const response = await fetch('http://localhost:5000/discord/unlink', {
-                method: 'DELETE',
-                credentials: 'include'
-            });
-
-            if (response.ok) {
-                setDiscordConnection(null);
-                showToast('success', 'Compte Discord déconnecté avec succès');
-            } else {
-                throw new Error('Failed to disconnect Discord');
+                    if (data.success) {
+                        setDiscordConnection(null);
+                        showToast('success', 'Compte Discord déconnecté avec succès');
+                    } else {
+                        throw new Error('Failed to disconnect Discord');
+                    }
+                } catch (error) {
+                    console.error('Error disconnecting Discord:', error);
+                    showToast('danger', 'Erreur lors de la déconnexion de Discord');
+                } finally {
+                    setLoadingDiscord(false);
+                    setConfirmModal({ ...confirmModal, isOpen: false });
+                }
             }
-        } catch (error) {
-            console.error('Error disconnecting Discord:', error);
-            showToast('danger', 'Erreur lors de la déconnexion de Discord');
-        } finally {
-            setLoadingDiscord(false);
-        }
+        });
     };
 
     // Handle Discord OAuth callback
@@ -332,16 +552,9 @@ export default function Settings() {
             
             setLoadingDiscord(true);
             try {
-                const response = await fetch('http://localhost:5000/discord/callback', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ code, state })
-                });
+                const data = await api.linkDiscord(code, state);
 
-                const data = await response.json();
-
-                if (response.ok) {
+                if (data.success || data.discord) {
                     setDiscordConnection(data.discord);
                     showToast('success', 'Compte Discord connecté avec succès !');
                     setActiveTab('integrations');
@@ -367,8 +580,17 @@ export default function Settings() {
             setProfileForm({
                 name: user.name || '',
                 email: user.email || '',
-                avatar: user.avatar || ''
+                avatar: user.avatar || '',
+                customAvatar: null
             });
+            
+            // Load preferences from user if available
+            if ((user as any).preferences) {
+                setPreferences((user as any).preferences);
+            }
+            
+            // Check if it's a Discord account (has discord_id)
+            setIsDiscordAccount(!!(user.discord_id));
         }
     }, [user]);
 
@@ -449,40 +671,58 @@ export default function Settings() {
 
                                 <form onSubmit={handleProfileSubmit} className="space-y-6">
                                     {/* Avatar */}
-                                    <div className="flex items-center gap-6">
-                                        <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
-                                            {getAvatarUrl(profileForm.avatar, user?.discord_id) ? (
-                                                <img
-                                                    src={getAvatarUrl(profileForm.avatar, user?.discord_id)!}
-                                                    alt="Avatar"
-                                                    className="size-24 rounded-full object-cover border-2 border-white/10"
-                                                />
-                                            ) : (
-                                                <div className="size-24 rounded-full bg-linear-to-br from-orange-500 to-amber-500 flex items-center justify-center text-3xl font-bold">
-                                                    {profileForm.name ? getAvatarInitials(profileForm.name) : '?'}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-3">Photo de profil</label>
+                                        <div className="flex items-center gap-6">
+                                            <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+                                                {profileForm.avatar ? (
+                                                    <img
+                                                        src={profileForm.avatar}
+                                                        alt="Avatar"
+                                                        className="size-24 rounded-full object-cover border-2 border-white/10"
+                                                    />
+                                                ) : (
+                                                    <div className="size-24 rounded-full bg-linear-to-br from-orange-500 to-amber-500 flex items-center justify-center text-3xl font-bold">
+                                                        {profileForm.name ? getAvatarInitials(profileForm.name) : '?'}
+                                                    </div>
+                                                )}
+                                                <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                    <Camera className="size-6" />
                                                 </div>
-                                            )}
-                                            <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                <Camera className="size-6" />
                                             </div>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleAvatarClick}
+                                                    className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                                                >
+                                                    Changer la photo
+                                                </button>
+                                                {user?.discord_id && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSyncDiscordAvatar}
+                                                        disabled={syncingAvatar}
+                                                        className="bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-indigo-400 flex items-center justify-center gap-2"
+                                                    >
+                                                        {syncingAvatar ? (
+                                                            <Loader2 className="size-4 animate-spin" />
+                                                        ) : (
+                                                            <Link2 className="size-4" />
+                                                        )}
+                                                        Sync Discord
+                                                    </button>
+                                                )}
+                                                <p className="text-xs text-gray-500">JPG, PNG ou GIF. Max 2MB</p>
+                                            </div>
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleAvatarChange}
+                                                className="hidden"
+                                            />
                                         </div>
-                                        <div>
-                                            <button
-                                                type="button"
-                                                onClick={handleAvatarClick}
-                                                className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                                            >
-                                                Changer la photo
-                                            </button>
-                                            <p className="text-xs text-gray-500 mt-2">JPG, PNG ou GIF. Max 2MB</p>
-                                        </div>
-                                        <input
-                                            ref={fileInputRef}
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={handleAvatarChange}
-                                            className="hidden"
-                                        />
                                     </div>
 
                                     {/* Name */}
@@ -538,29 +778,39 @@ export default function Settings() {
                                 <div className="bg-bg-card border border-white/10 rounded-xl p-6">
                                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
                                         <Lock className="size-6 text-brand-orange" />
-                                        Modifier le mot de passe
+                                        {isDiscordAccount ? 'Créer un mot de passe' : 'Modifier le mot de passe'}
                                     </h2>
 
-                                    <form onSubmit={handlePasswordSubmit} className="space-y-6">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-2">Mot de passe actuel</label>
-                                            <div className="relative">
-                                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-500" />
-                                                <input
-                                                    type={showPasswords.current ? 'text' : 'password'}
-                                                    value={passwordForm.currentPassword}
-                                                    onChange={(e) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
-                                                    className="w-full bg-white/5 border border-white/10 rounded-lg pl-10 pr-12 py-3 focus:outline-none focus:border-brand-orange transition-colors"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
-                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                                                >
-                                                    {showPasswords.current ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
-                                                </button>
-                                            </div>
+                                    {isDiscordAccount && (
+                                        <div className="mb-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm">
+                                            👋 Votre compte a été créé via Discord. Pour créer un mot de passe et pouvoir vous connecter par email, 
+                                            entrez un nouveau mot de passe ci-dessous. Un email vous sera envoyé pour finaliser la création.
                                         </div>
+                                    )}
+
+                                    <form onSubmit={handlePasswordSubmit} className="space-y-6">
+                                        {!isDiscordAccount && (
+                                            <div>
+                                                <label className="block text-sm font-medium mb-2">Mot de passe actuel</label>
+                                                <div className="relative">
+                                                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-500" />
+                                                    <input
+                                                        type={showPasswords.current ? 'text' : 'password'}
+                                                        value={passwordForm.currentPassword}
+                                                        onChange={(e) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                                                        className="w-full bg-white/5 border border-white/10 rounded-lg pl-10 pr-12 py-3 focus:outline-none focus:border-brand-orange transition-colors"
+                                                        required
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                                                    >
+                                                        {showPasswords.current ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
 
                                         <div>
                                             <label className="block text-sm font-medium mb-2">Nouveau mot de passe</label>
@@ -797,7 +1047,6 @@ export default function Settings() {
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10">
                                                 <div className="flex items-center gap-3">
-                                                    <Moon className="size-5 text-purple-400" />
                                                     <div>
                                                         <p className="font-medium">Mode sombre</p>
                                                         <p className="text-sm text-gray-400">Utiliser le thème sombre</p>
@@ -868,7 +1117,6 @@ export default function Settings() {
                                             <div className="flex items-start justify-between mb-6">
                                                 <div>
                                                     <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                                                        <Sparkles className="size-6 text-brand-orange" />
                                                         Plan {getPlanDisplayName(subscription)}
                                                     </h2>
                                                     <p className="text-gray-400">
@@ -878,7 +1126,7 @@ export default function Settings() {
                                                     </p>
                                                     {subscription?.cancel_at_period_end && (
                                                         <p className="text-red-400 text-sm mt-2">
-                                                            ⚠️ Votre abonnement sera annulé le {new Date(subscription.current_period_end).toLocaleDateString('fr-FR')}
+                                                            Votre abonnement sera annulé le {new Date(subscription.current_period_end).toLocaleDateString('fr-FR')}
                                                         </p>
                                                     )}
                                                 </div>
@@ -989,41 +1237,90 @@ export default function Settings() {
                             <motion.div
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="bg-bg-card border border-red-500/30 rounded-xl p-6"
+                                className="bg-bg-card border border-white/10 rounded-xl p-6"
                             >
-                                <h2 className="text-2xl font-bold mb-6 flex items-center gap-3 text-red-400">
-                                    <AlertTriangle className="size-6" />
-                                    Zone de danger
-                                </h2>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="size-10 rounded-lg  flex items-center justify-center">
+                                        <AlertTriangle className="size-5 text-red-400" />
+                                    </div>
+                                    <h2 className="text-2xl font-bold">Zone de danger</h2>
+                                </div>
+                                <p className="text-gray-400 mb-8">
+                                    Gérez les actions critiques et irréversibles de votre compte
+                                </p>
 
-                                <div className="space-y-6">
-                                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
-                                        <h3 className="text-lg font-bold mb-2">Supprimer mon compte</h3>
-                                        <p className="text-gray-400 mb-4">
-                                            Une fois votre compte supprimé, il n'y a pas de retour en arrière. 
-                                            Toutes vos données, instances N8N et workflows seront définitivement supprimés.
-                                        </p>
-                                        <button
-                                            onClick={handleDeleteAccount}
-                                            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-semibold transition-all"
-                                        >
-                                            <Trash2 className="size-5" />
-                                            Supprimer mon compte
-                                        </button>
+                                <div className="space-y-4">
+                                    {/* Reset Preferences */}
+                                    <div className="border border-white/10 rounded-lg p-6 hover:border-white/20 transition-colors">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex-1">
+                                                <h3 className="text-lg font-semibold mb-1">Réinitialiser les préférences</h3>
+                                                <p className="text-sm text-gray-400">
+                                                    Restaure toutes vos préférences aux valeurs par défaut 
+                                                    (notifications activées, thème sombre, langue française).
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={handleResetPreferences}
+                                                disabled={loading}
+                                                className="shrink-0 flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {loading ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
+                                                Réinitialiser
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-6">
-                                        <div className="flex items-start gap-3">
-                                            <AlertTriangle className="size-6 text-yellow-400 shrink-0 mt-0.5" />
-                                            <div>
-                                                <h4 className="font-semibold text-yellow-400 mb-2">Avant de supprimer votre compte</h4>
-                                                <ul className="text-sm text-gray-300 space-y-1">
-                                                    <li>• Téléchargez vos workflows importants</li>
-                                                    <li>• Exportez vos données si nécessaire</li>
-                                                    <li>• Annulez votre abonnement actif</li>
-                                                    <li>• Notez que cette action est irréversible</li>
+                                    {/* Delete All Instances */}
+                                    <div className="border border-white/10 rounded-lg p-6 hover:border-orange-500/30 transition-colors">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h3 className="text-lg font-semibold">Supprimer toutes les instances</h3>
+                                                    <span className="text-xs px-2 py-0.5 bg-orange-500/20 text-orange-400 rounded-full">Irréversible</span>
+                                                </div>
+                                                <p className="text-sm text-gray-400">
+                                                    Supprime toutes vos instances N8N et leurs workflows. 
+                                                    Cette action libérera votre quota d'instances.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={handleDeleteAllInstances}
+                                                disabled={loading}
+                                                className="shrink-0 flex items-center gap-2 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 px-4 py-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {loading ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                                                Supprimer tout
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Delete Account */}
+                                    <div className="border border-red-500/30 rounded-lg p-6 hover:border-red-500/50 transition-colors bg-red-500/5">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h3 className="text-lg font-semibold text-red-400">Supprimer mon compte</h3>
+                                                    <span className="text-xs px-2 py-0.5 bg-red-500/20 text-red-400 rounded-full">Danger</span>
+                                                </div>
+                                                <p className="text-sm text-gray-400 mb-3">
+                                                    Une fois votre compte supprimé, il n'y a pas de retour en arrière. 
+                                                    Toutes vos données, instances N8N, workflows et abonnements seront définitivement supprimés.
+                                                </p>
+                                                <ul className="text-xs text-gray-500 space-y-1">
+                                                    <li>→ Téléchargez vos workflows importants</li>
+                                                    <li>→ Exportez vos données si nécessaire</li>
+                                                    <li>→ Annulez votre abonnement actif</li>
                                                 </ul>
                                             </div>
+                                            <button
+                                                onClick={handleDeleteAccount}
+                                                disabled={loading}
+                                                className="shrink-0 flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {loading ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                                                Supprimer
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -1031,6 +1328,53 @@ export default function Settings() {
                         )}
                     </main>
                 </div>
+
+                {/* Confirmation Modal */}
+                {confirmModal.isOpen && (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-bg-card border border-white/10 rounded-xl p-6 max-w-md w-full shadow-2xl"
+                        >
+                            <div className="flex items-start gap-4 mb-6">
+                                <div className={`size-12 rounded-full flex items-center justify-center shrink-0 ${
+                                    confirmModal.isDanger 
+                                        ? 'bg-red-500/20 text-red-400' 
+                                        : 'bg-blue-500/20 text-blue-400'
+                                }`}>
+                                    <AlertTriangle className="size-6" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold mb-2">{confirmModal.title}</h3>
+                                    <p className="text-gray-400 text-sm leading-relaxed">{confirmModal.message}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                                    className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg font-medium transition-all"
+                                >
+                                    Annuler
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        confirmModal.onConfirm();
+                                    }}
+                                    className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all ${
+                                        confirmModal.isDanger
+                                            ? 'bg-red-500 hover:bg-red-600 text-white'
+                                            : 'bg-brand-orange hover:bg-orange-600 text-white'
+                                    }`}
+                                >
+                                    Confirmer
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
             </div>
     );
 }

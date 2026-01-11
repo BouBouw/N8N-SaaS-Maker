@@ -419,11 +419,23 @@ export default function DashboardLayout() {
                         {/* Profile Menu */}
                         <div className="relative">
                             <button
-                                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                                onClick={() => {
+                                    console.log('🖼️ Avatar DEBUG - user.avatar:', user?.avatar?.substring(0, 50));
+                                    console.log('🖼️ Avatar DEBUG - user.discord_id:', user?.discord_id);
+                                    setShowProfileMenu(!showProfileMenu);
+                                }}
                                 className="flex items-center gap-2 hover:bg-white/5 px-3 py-2 rounded-lg transition-all"
                             >
-                                {getAvatarUrl(user?.avatar, user?.discord_id) ? (
-                                    <img src={getAvatarUrl(user?.avatar, user?.discord_id)!} alt={user?.name || 'User'} className="size-8 rounded-full border border-white/10" />
+                                {user?.avatar ? (
+                                    <img 
+                                        src={user.avatar.startsWith('data:') || user.avatar.startsWith('http') 
+                                            ? user.avatar 
+                                            : getAvatarUrl(user.avatar, user.discord_id) || ''} 
+                                        alt={user?.name || 'User'} 
+                                        className="size-8 rounded-full border border-white/10 object-cover"
+                                        onLoad={() => console.log('✅ Avatar loaded successfully')}
+                                        onError={(e) => console.error('❌ Avatar failed to load:', e)}
+                                    />
                                 ) : (
                                     <div className="size-8 rounded-full bg-linear-to-br from-orange-500 to-amber-500 flex items-center justify-center text-sm font-semibold">
                                         {user?.name ? getAvatarInitials(user.name) : '?'}

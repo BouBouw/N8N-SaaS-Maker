@@ -1,12 +1,17 @@
 /**
  * Get the full avatar URL from either a Discord hash or a full URL
- * @param avatar - Discord avatar hash or full URL
+ * @param avatar - Discord avatar hash, full URL, or base64 data URL
  * @param discordId - Discord user ID (required if avatar is a hash)
  * @returns Full avatar URL or null
  */
 export function getAvatarUrl(avatar: string | null | undefined, discordId?: string | null): string | null {
     if (!avatar) {
         return null;
+    }
+
+    // If it's a base64 data URL (from file upload preview), return as is
+    if (avatar.startsWith('data:image/')) {
+        return avatar;
     }
 
     // If it's already a full URL, return as is

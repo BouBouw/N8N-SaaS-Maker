@@ -346,7 +346,7 @@ export default function Library() {
                                 <motion.div
                                     key={workflow.id}
                                     whileHover={{ y: -4 }}
-                                    className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/10 transition-all"
+                                    className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/10 transition-all flex flex-col h-full"
                                 >
                                     <div className="flex items-start justify-between mb-3">
                                         <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
@@ -375,6 +375,9 @@ export default function Library() {
 
                                     <h3 className="font-semibold text-lg mb-2 line-clamp-2">{workflow.name}</h3>
                                     
+                                    {/* Spacer */}
+                                    <div className="flex-1"></div>
+
                                     <div className="flex items-center gap-2 mb-3 text-sm text-gray-400">
                                         <Server className="size-4" />
                                         <span className="truncate">{workflow.instanceName}</span>
@@ -407,7 +410,7 @@ export default function Library() {
                                 key={resource.id}
                                 whileHover={{ y: -4 }}
                                 onClick={() => handleViewResource(resource)}
-                                className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/10 transition-all cursor-pointer"
+                                className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/10 transition-all cursor-pointer flex flex-col"
                             >
                                 <div className="flex items-start justify-between mb-3">
                                     <div className={`p-2 rounded-lg ${
@@ -444,6 +447,9 @@ export default function Library() {
                                         </div>
                                     );
                                 })()}
+
+                                {/* Spacer pour pousser le contenu en bas */}
+                                <div className="flex-1"></div>
 
                                 <div className="flex items-center gap-2 mb-4 text-sm text-gray-400">
                                     {getAvatarUrl(resource.author_avatar, resource.author_discord_id) ? (

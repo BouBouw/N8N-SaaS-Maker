@@ -32,6 +32,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const result = await api.me();
             if (result.user) {
+                console.log('🔐 Auth - User loaded from API:', result.user.name);
+                console.log('🖼️ Auth - Avatar value:', result.user.avatar?.substring(0, 50) || 'none');
+                console.log('🖼️ Auth - Avatar length:', result.user.avatar?.length || 0);
                 setUser(result.user);
             } else {
                 setUser(null);
