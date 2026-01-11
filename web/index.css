@@ -1,0 +1,104 @@
+
+
+/* Markdown Prose Styles for AI Messages */
+.prose {
+    max-width: 100%;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+    color: #fff;
+    font-weight: 600;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    line-height: 1.3;
+}
+
+.prose h1 { font-size: 1.5em; }
+.prose h2 { font-size: 1.3em; }
+.prose h3 { font-size: 1.1em; }
+
+.prose p {
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+    line-height: 1.6;
+}
+
+.prose strong {
+    color: #fff;
+    font-weight: 600;
+}
+
+.prose code {
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: #CF703C;
+    font-family: 'Courier New', monospace;
+}
+
+.prose pre {
+    background-color: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1em;
+    overflow-x: auto;
+    margin: 1em 0;
+}
+
+.prose pre code {
+    background-color: transparent;
+    padding: 0;
+    color: #e0e0e0;
+    font-size: 0.875em;
+    line-height: 1.5;
+}
+
+.prose ul, .prose ol {
+    margin: 1em 0;
+    padding-left: 1.5em;
+}
+
+.prose li {
+    margin: 0.5em 0;
+}
+
+.prose blockquote {
+    border-left: 3px solid #CF703C;
+    padding-left: 1em;
+    margin: 1em 0;
+    color: rgba(255, 255, 255, 0.8);
+    font-style: italic;
+}
+
+.prose a {
+    color: #CF703C;
+    text-decoration: underline;
+}
+
+.prose a:hover {
+    color: #e07f4c;
+}
+
+.prose hr {
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 2em 0;
+}
+
+.prose table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+}
+
+.prose th, .prose td {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.5em;
+    text-align: left;
+}
+
+.prose th {
+    background-color: rgba(255, 255, 255, 0.05);
+    font-weight: 600;
+}

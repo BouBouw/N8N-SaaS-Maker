@@ -1,0 +1,40 @@
+{
+  "name": "logicai-server",
+  "version": "1.0.0",
+  "description": "Backend API for LogicAI N8N hosting platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "n8n",
+    "hosting",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "dockerode": "^4.0.9",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-mysql-session": "^3.0.0",
+    "express-session": "^1.17.3",
+    "mysql2": "^3.6.5",
+    "nodemailer": "^6.10.1",
+    "passport": "^0.7.0",
+    "passport-discord": "^0.1.4",
+    "react-markdown": "^10.1.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "stripe": "^20.1.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
