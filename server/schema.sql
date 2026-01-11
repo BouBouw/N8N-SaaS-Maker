@@ -1,6 +1,15 @@
+-- =====================================================
+-- LogicAI Database Schema
+-- Clean initialization script for production deployment
+-- =====================================================
+
 -- Create database
-CREATE DATABASE IF NOT EXISTS logicai_db;
+CREATE DATABASE IF NOT EXISTS logicai_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE logicai_db;
+
+-- =====================================================
+-- USERS & AUTHENTICATION
+-- =====================================================
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -9,17 +18,22 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255),
     name VARCHAR(255) NOT NULL,
     discord_id VARCHAR(255) UNIQUE,
-    avatar VARCHAR(500),
+    avatar LONGTEXT,
     email_verified BOOLEAN DEFAULT FALSE,
     role ENUM('user', 'support', 'admin') DEFAULT 'user' NOT NULL,
+    subscription_plan ENUM('free', 'monthly', 'annual') DEFAULT 'free',
+    stripe_customer_id VARCHAR(255) DEFAULT NULL,
     reset_token VARCHAR(255),
-    reset_token_expires DATETIME,
+    reset_expires DATETIME,
+    preferences TEXT,
+    has_completed_onboarding BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_email (email),
     INDEX idx_discord_id (discord_id),
-    INDEX idx_role (role)
-);
+    INDEX idx_role (role),
+    INDEX idx_stripe_customer_id (stripe_customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Sessions table (for express-session)
 CREATE TABLE IF NOT EXISTS sessions (
@@ -27,37 +41,56 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires INT(11) UNSIGNED NOT NULL,
     data MEDIUMTEXT COLLATE utf8mb4_bin,
     PRIMARY KEY (session_id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- N8N Instances table
-CREATE TABLE IF NOT EXISTS n8n_instances (
+-- =====================================================
+-- SUBSCRIPTIONS & PAYMENTS
+-- =====================================================
+
+-- Subscriptions table (Stripe integration)
+CREATE TABLE IF NOT EXISTS subscriptions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
-    uuid VARCHAR(36) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    subdomain VARCHAR(255) UNIQUE NOT NULL,
-    container_id VARCHAR(255) UNIQUE,
-    container_name VARCHAR(255) UNIQUE,
-    docker_port INT,
-    status ENUM('running', 'stopped', 'error', 'creating') DEFAULT 'creating',
-    storage_limit INT DEFAULT 5, -- GB
-    storage_used DECIMAL(10,2) DEFAULT 0, -- GB
-    ram_limit INT DEFAULT 6, -- GB
-    bandwidth_limit INT DEFAULT 2, -- TB
-    bandwidth_used DECIMAL(10,2) DEFAULT 0, -- TB
-    n8n_version VARCHAR(50) DEFAULT 'latest',
-    environment_vars JSON,
+    stripe_customer_id VARCHAR(255) NOT NULL,
+    stripe_subscription_id VARCHAR(255),
+    plan_name VARCHAR(50) NOT NULL,
+    plan_type ENUM('monthly', 'annual') NOT NULL,
+    status ENUM('active', 'canceled', 'past_due', 'incomplete', 'trialing') DEFAULT 'active',
+    current_period_start DATETIME,
+    current_period_end DATETIME,
+    cancel_at_period_end BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_stripe_subscription (stripe_subscription_id),
     INDEX idx_user_id (user_id),
-    INDEX idx_uuid (uuid),
-    INDEX idx_subdomain (subdomain),
+    INDEX idx_stripe_customer_id (stripe_customer_id),
     INDEX idx_status (status)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- User subscriptions table
+-- Payments table (Payment history)
+CREATE TABLE IF NOT EXISTS payments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    subscription_id INT,
+    stripe_payment_intent_id VARCHAR(255),
+    stripe_invoice_id VARCHAR(255),
+    amount DECIMAL(10, 2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'EUR',
+    status ENUM('succeeded', 'pending', 'failed', 'refunded') DEFAULT 'pending',
+    description TEXT,
+    plan_type VARCHAR(50),
+    payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL,
+    INDEX idx_user_id (user_id),
+    INDEX idx_subscription_id (subscription_id),
+    INDEX idx_payment_date (payment_date),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- User subscriptions table (Plan limits)
 CREATE TABLE IF NOT EXISTS user_subscriptions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL UNIQUE,
@@ -74,72 +107,44 @@ CREATE TABLE IF NOT EXISTS user_subscriptions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_id (user_id)
-);
+    INDEX idx_user_id (user_id),
+    INDEX idx_plan (plan)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Activities table (for user activity tracking and notifications)
-CREATE TABLE IF NOT EXISTS activities (
+-- =====================================================
+-- N8N INSTANCES
+-- =====================================================
+
+-- N8N Instances table
+CREATE TABLE IF NOT EXISTS n8n_instances (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
-    instance_id INT,
-    action ENUM('instance_created', 'instance_deleted', 'instance_started', 'instance_stopped', 'instance_restarted', 'instance_error', 'workflow_executed') NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    metadata JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (instance_id) REFERENCES n8n_instances(id) ON DELETE SET NULL,
-    INDEX idx_user_id (user_id),
-    INDEX idx_instance_id (instance_id),
-    INDEX idx_created_at (created_at)
-);
-
--- AI Chat Conversations table
-CREATE TABLE IF NOT EXISTS ai_conversations (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    title VARCHAR(255) NOT NULL DEFAULT 'Nouvelle conversation',
-    model_type ENUM('workflow_generator', 'prompt_generator', 'general') DEFAULT 'general',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_id (user_id),
-    INDEX idx_updated_at (updated_at)
-);
-
--- AI Chat Messages table
-CREATE TABLE IF NOT EXISTS ai_messages (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    conversation_id INT NOT NULL,
-    role ENUM('user', 'assistant', 'system') NOT NULL,
-    content TEXT NOT NULL,
-    metadata JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE,
-    INDEX idx_conversation_id (conversation_id),
-    INDEX idx_created_at (created_at)
-);
-
--- AI Templates/Models library
-CREATE TABLE IF NOT EXISTS ai_templates (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    description TEXT,
-    category ENUM('workflow_generator', 'prompt_generator') NOT NULL,
-    prompt_template TEXT NOT NULL,
-    example_output TEXT,
-    tags JSON,
-    is_public BOOLEAN DEFAULT TRUE,
-    created_by INT,
-    usage_count INT DEFAULT 0,
+    subdomain VARCHAR(255) UNIQUE NOT NULL,
+    container_id VARCHAR(255) UNIQUE,
+    container_name VARCHAR(255) UNIQUE,
+    docker_port INT,
+    owner_password VARCHAR(255),
+    status ENUM('running', 'stopped', 'error', 'creating') DEFAULT 'creating',
+    storage_limit INT DEFAULT 5, -- GB
+    storage_used DECIMAL(10,2) DEFAULT 0, -- GB
+    ram_limit INT DEFAULT 6, -- GB
+    bandwidth_limit INT DEFAULT 2, -- TB
+    bandwidth_used DECIMAL(10,2) DEFAULT 0, -- TB
+    n8n_version VARCHAR(50) DEFAULT 'latest',
+    environment_vars JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-    INDEX idx_category (category),
-    INDEX idx_is_public (is_public)
-);
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
+    INDEX idx_uuid (uuid),
+    INDEX idx_subdomain (subdomain),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Instance Members table
+-- Instance Members table (Team collaboration)
 CREATE TABLE IF NOT EXISTS instance_members (
     id INT AUTO_INCREMENT PRIMARY KEY,
     instance_id INT NOT NULL,
@@ -159,7 +164,72 @@ CREATE TABLE IF NOT EXISTS instance_members (
     INDEX idx_email (email),
     INDEX idx_token (invitation_token),
     UNIQUE KEY unique_instance_email (instance_id, email)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- API keys table (N8N workflow execution)
+CREATE TABLE IF NOT EXISTS api_keys (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    instance_id INT NOT NULL,
+    api_key VARCHAR(255) NOT NULL UNIQUE,
+    key_preview VARCHAR(20) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP NULL,
+    request_count INT DEFAULT 0,
+    FOREIGN KEY (instance_id) REFERENCES n8n_instances(id) ON DELETE CASCADE,
+    INDEX idx_api_key (api_key),
+    INDEX idx_instance_id (instance_id),
+    INDEX idx_is_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- API logs table (Usage tracking)
+CREATE TABLE IF NOT EXISTS api_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    api_key_id INT NOT NULL,
+    instance_id INT NOT NULL,
+    workflow_id VARCHAR(255) NOT NULL,
+    endpoint VARCHAR(255) NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    status_code INT NOT NULL,
+    response_time INT NOT NULL COMMENT 'in milliseconds',
+    error_message TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE,
+    FOREIGN KEY (instance_id) REFERENCES n8n_instances(id) ON DELETE CASCADE,
+    INDEX idx_api_key_id (api_key_id),
+    INDEX idx_created_at (created_at),
+    INDEX idx_instance_id (instance_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- ACTIVITIES & NOTIFICATIONS
+-- =====================================================
+
+-- Activities table (User activity tracking)
+CREATE TABLE IF NOT EXISTS activities (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    instance_id INT,
+    action ENUM(
+        'instance_created', 
+        'instance_deleted', 
+        'instance_started', 
+        'instance_stopped', 
+        'instance_restarted', 
+        'instance_error',
+        'workflow_executed'
+    ) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    metadata JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (instance_id) REFERENCES n8n_instances(id) ON DELETE SET NULL,
+    INDEX idx_user_id (user_id),
+    INDEX idx_instance_id (instance_id),
+    INDEX idx_created_at (created_at),
+    INDEX idx_action (action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Member notifications table
 CREATE TABLE IF NOT EXISTS member_notifications (
@@ -174,9 +244,66 @@ CREATE TABLE IF NOT EXISTS member_notifications (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_user_id (user_id),
     INDEX idx_is_read (is_read),
-    INDEX idx_created_at (created_at)
-);
+    INDEX idx_created_at (created_at),
+    INDEX idx_type (type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =====================================================
+-- AI FEATURES
+-- =====================================================
+
+-- AI Chat Conversations table
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    title VARCHAR(255) NOT NULL DEFAULT 'Nouvelle conversation',
+    model_type ENUM('workflow_generator', 'prompt_generator', 'general') DEFAULT 'general',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
+    INDEX idx_updated_at (updated_at),
+    INDEX idx_model_type (model_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- AI Chat Messages table
+CREATE TABLE IF NOT EXISTS ai_messages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id INT NOT NULL,
+    role ENUM('user', 'assistant', 'system') NOT NULL,
+    content TEXT NOT NULL,
+    metadata JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE,
+    INDEX idx_conversation_id (conversation_id),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- AI Templates/Models library
+CREATE TABLE IF NOT EXISTS ai_templates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    category ENUM('workflow_generator', 'prompt_generator') NOT NULL,
+    prompt_template TEXT NOT NULL,
+    example_output TEXT,
+    tags JSON,
+    is_public BOOLEAN DEFAULT TRUE,
+    created_by INT,
+    usage_count INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_category (category),
+    INDEX idx_is_public (is_public),
+    INDEX idx_usage_count (usage_count)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- COMMUNITY RESOURCES
+-- =====================================================
+
+-- Resources table (Workflows and Prompts marketplace)
 CREATE TABLE IF NOT EXISTS resources (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id INT NOT NULL,
@@ -196,12 +323,13 @@ CREATE TABLE IF NOT EXISTS resources (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_type (type),
     INDEX idx_price (price),
-    INDEX idx_user (user_id),
-    INDEX idx_created (created_at),
+    INDEX idx_user_id (user_id),
+    INDEX idx_created_at (created_at),
+    INDEX idx_is_featured (is_featured),
     FULLTEXT INDEX idx_search (title, description)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Table for resource likes/favorites
+-- Resource likes/favorites table
 CREATE TABLE IF NOT EXISTS resource_likes (
     id INT PRIMARY KEY AUTO_INCREMENT,
     resource_id INT NOT NULL,
@@ -209,104 +337,11 @@ CREATE TABLE IF NOT EXISTS resource_likes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_like (resource_id, user_id)
+    UNIQUE KEY unique_like (resource_id, user_id),
+    INDEX idx_resource_id (resource_id),
+    INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Create API keys table for N8N workflow execution
-CREATE TABLE IF NOT EXISTS api_keys (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    instance_id INT NOT NULL,
-    api_key VARCHAR(255) NOT NULL UNIQUE,
-    key_preview VARCHAR(20) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_used_at TIMESTAMP NULL,
-    request_count INT DEFAULT 0,
-    FOREIGN KEY (instance_id) REFERENCES n8n_instances(id) ON DELETE CASCADE,
-    INDEX idx_api_key (api_key),
-    INDEX idx_instance_id (instance_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Create API logs table for tracking usage
-CREATE TABLE IF NOT EXISTS api_logs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    api_key_id INT NOT NULL,
-    instance_id INT NOT NULL,
-    workflow_id VARCHAR(255) NOT NULL,
-    endpoint VARCHAR(255) NOT NULL,
-    method VARCHAR(10) NOT NULL,
-    status_code INT NOT NULL,
-    response_time INT NOT NULL COMMENT 'in milliseconds',
-    error_message TEXT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE,
-    FOREIGN KEY (instance_id) REFERENCES n8n_instances(id) ON DELETE CASCADE,
-    INDEX idx_api_key_id (api_key_id),
-    INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-UPDATE users 
-SET avatar = SUBSTRING_INDEX(SUBSTRING_INDEX(avatar, '/', -1), '.', 1)
-WHERE avatar LIKE 'https://cdn.discordapp.com/avatars/%'
-AND discord_id IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS subscriptions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    stripe_customer_id VARCHAR(255) NOT NULL,
-    stripe_subscription_id VARCHAR(255),
-    plan_type ENUM('monthly', 'annual') NOT NULL,
-    status ENUM('active', 'canceled', 'past_due', 'incomplete', 'trialing') DEFAULT 'active',
-    current_period_start DATETIME,
-    current_period_end DATETIME,
-    cancel_at_period_end BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_stripe_subscription (stripe_subscription_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_stripe_customer_id (stripe_customer_id)
-);
-
--- Create payments table for payment history
-CREATE TABLE IF NOT EXISTS payments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    subscription_id INT,
-    stripe_payment_intent_id VARCHAR(255),
-    stripe_invoice_id VARCHAR(255),
-    amount DECIMAL(10, 2) NOT NULL,
-    currency VARCHAR(3) DEFAULT 'EUR',
-    status ENUM('succeeded', 'pending', 'failed', 'refunded') DEFAULT 'pending',
-    description TEXT,
-    payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL,
-    INDEX idx_user_id (user_id),
-    INDEX idx_subscription_id (subscription_id),
-    INDEX idx_payment_date (payment_date)
-);
-
--- Add subscription_plan column to users table if not exists
-ALTER TABLE users 
-ADD COLUMN IF NOT EXISTS subscription_plan ENUM('free', 'monthly', 'annual') DEFAULT 'free',
-ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255) DEFAULT NULL,
-ADD INDEX IF NOT EXISTS idx_stripe_customer_id (stripe_customer_id);
-
-ALTER TABLE activities 
-MODIFY COLUMN action ENUM(
-    'instance_created', 
-    'instance_deleted', 
-    'instance_started', 
-    'instance_stopped', 
-    'instance_restarted', 
-    'instance_error',
-    'workflow_executed'
-) NOT NULL;
-
-ALTER TABLE users ADD COLUMN has_completed_onboarding BOOLEAN DEFAULT FALSE AFTER discord_username;
-
-ALTER TABLE users 
-ADD COLUMN role ENUM('user', 'support', 'admin') DEFAULT 'user' NOT NULL AFTER email_verified,
-ADD INDEX idx_role (role);
+-- =====================================================
+-- END OF SCHEMA
+-- =====================================================
