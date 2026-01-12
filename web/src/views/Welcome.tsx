@@ -28,12 +28,9 @@ const NAV_LINKS = [
 ];
 
 const LOGOS = [
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Logo_of_YouTube_%282015-2017%29.svg/2560px-Logo_of_YouTube_%282015-2017%29.svg.png",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_2015_logo.svg/2560px-Google_2015_logo.svg.png",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Facebook_f_logo_%282019%29.svg/2048px-Facebook_f_logo_%282019%29.svg.png",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Microsoft_logo.svg/2048px-Microsoft_logo.svg.png",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Netflix_2015_logo.svg/2560px-Netflix_2015_logo.svg.png",
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Amazon_logo.svg/2560px-Amazon_logo.svg.png",
+    "/partners/1.png",
+    "/partners/2.png",
+    "/partners/3.png",
 ];
 
 const FEATURES = [
@@ -72,30 +69,6 @@ const FAQS = [
     { q: "L'API est-elle disponible sur tous les plans ?", a: "L'API est disponible uniquement sur les plans Pro et Business. Chaque instance dispose de sa propre clé API." },
     { q: "Comment fonctionne l'IA Make ?", a: "Notre IA Make vous permet de générer des workflows N8N complets à partir d'un prompt, ou de créer des prompts optimisés pour vos agents IA." },
     { q: "Puis-je migrer mes workflows existants ?", a: "Absolument. Vous pouvez importer vos workflows N8N existants et utiliser notre API pour les exporter dans différents langages (JS, TS, Python)." }
-];
-
-const TESTIMONIALS = [
-    {
-        name: "Thomas Dubois",
-        role: "Dev Ops chez StartupFlow",
-        image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=150&h=150",
-        quote: "L'hébergement N8N de LogicAI nous a permis de déployer 5 instances en quelques minutes. L'IA Make a créé nos premiers workflows automatiquement.",
-        metric: "5 instances déployées"
-    },
-    {
-        name: "Marie Laurent",
-        role: "CTO chez DataConnect",
-        image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150&h=150",
-        quote: "L'API nous permet d'intégrer N8N directement dans notre produit. Les performances sont exceptionnelles avec 16 Go de RAM par instance.",
-        metric: "99,9% uptime"
-    },
-    {
-        name: "Lucas Martin",
-        role: "Fondateur AutomateAll",
-        image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150&h=150",
-        quote: "Le générateur de prompts IA est incroyable. Il crée des instructions parfaites pour nos agents N8N. Plus besoin de passer des heures à optimiser.",
-        metric: "< 5min setup"
-    }
 ];
 
 const STEPS = [
@@ -225,6 +198,22 @@ function Navbar({ activeSection }: { activeSection: string }) {
 
 function Hero() {
     const { user } = useAuth();
+    const [totalInstances, setTotalInstances] = useState<number>(0);
+    
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const response = await fetch(`${import.meta.env.VITE_API_URL}/stats/public`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setTotalInstances(data.totalInstances);
+                }
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            }
+        };
+        fetchStats();
+    }, []);
     
     return (
         <section id="hero" className="relative min-h-screen overflow-hidden">
@@ -269,7 +258,7 @@ function Hero() {
                                 Commencer gratuitement
                             </a>
                             <button className="px-6 py-3 rounded-lg font-semibold text-white hover:bg-white/5 transition-all flex items-center gap-2 border border-transparent hover:border-white/10">
-                                Réserver une démo
+                                Regarder une démo
                                 <ArrowRight className="size-4" />
                             </button>
                         </motion.div>
@@ -281,7 +270,7 @@ function Hero() {
                             transition={{ duration: 0.6, delay: 0.4 }}
                             className="text-sm text-gray-500"
                         >
-                            Déjà <span className="text-orange-500 font-semibold">500+</span> instances N8N déployées
+                            Déjà <span className="text-orange-500 font-semibold">{totalInstances || 0}+</span> instances N8N déployées
                         </motion.p>
                     </div>
 
@@ -294,7 +283,7 @@ function Hero() {
                     >
                         <div className="relative rounded-xl overflow-hidden shadow-2xl">
                             <img 
-                                src="https://framerusercontent.com/images/ygNyIWUWURpgHzjr0xopd8M5xM.png?scale-down-to=1024&width=1627&height=1117" 
+                                src="/Hero.png" 
                                 alt="Dashboard Preview"
                                 className="w-full h-auto"
                             />
@@ -313,7 +302,7 @@ function SocialProof() {
         <section className="py-12 bg-black/50 overflow-hidden">
             <div className="max-w-7xl mx-auto px-6 flex items-center gap-18">
                 <div className="text-sm font-medium text-gray-500 whitespace-nowrap shrink-0">
-                    <div>Plus de <span className="text-amber-500">1,200+</span> équipes</div>
+                    <div>Plus de <span className="text-amber-500">3+</span> équipes</div>
                     <div>nous font confiance pour leurs workflows.</div>
                 </div>
                 <div className="relative flex w-full overflow-hidden mask-linear-fade">
@@ -426,17 +415,17 @@ function HowItWorks() {
                                 <motion.div
                                     animate={{ x: [0, 20, 0], opacity: [0.5, 1, 0.5] }}
                                     transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                                    className="h-16 w-3/4 bg-linear-to-r from-blue-500/20 to-transparent rounded-lg border border-blue-500/30"
+                                    className="h-16 w-3/4 bg-linear-to-r from-orange-500/20 to-transparent rounded-lg border border-orange-500/30"
                                 />
                                 <motion.div
                                     animate={{ x: [0, -20, 0], opacity: [0.5, 1, 0.5] }}
                                     transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-                                    className="h-16 w-full bg-linear-to-r from-purple-500/20 to-transparent rounded-lg border border-purple-500/30 ml-auto"
+                                    className="h-16 w-full bg-linear-to-r from-amber-200/20 to-transparent rounded-lg border border-amber-200/30 ml-auto"
                                 />
                                 <motion.div
                                     animate={{ x: [0, 10, 0], opacity: [0.5, 1, 0.5] }}
                                     transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-                                    className="h-16 w-2/3 bg-linear-to-r from-green-500/20 to-transparent rounded-lg border border-green-500/30"
+                                    className="h-16 w-2/3 bg-linear-to-r from-yellow-500/20 to-transparent rounded-lg border border-yellow-500/30"
                                 />
                             </div>
 
@@ -453,46 +442,46 @@ function HowItWorks() {
 }
 
 function Testimonials() {
+    useEffect(() => {
+        // Charger le script Trustpilot
+        const script = document.createElement('script');
+        script.src = '//widget.trustpilot.com/bootstrap/v5/tp.widget.bootstrap.min.js';
+        script.async = true;
+        document.body.appendChild(script);
+
+        return () => {
+            // Nettoyer le script au démontage
+            if (document.body.contains(script)) {
+                document.body.removeChild(script);
+            }
+        };
+    }, []);
+
     return (
         <section id="testimonials" className="py-20 border-y border-white/5 bg-black/30">
             <div className="max-w-7xl mx-auto px-4">
                 <div className="text-center mb-16">
                     <h2 className="text-4xl font-bold tracking-tight mb-4">
-                        Résultats d'<span className="text-[#868686]">utilisateurs réels</span>
+                        Avis de nos <span className="text-[#868686]">clients</span>
                     </h2>
+                    <p className="text-gray-400">Découvrez ce que nos utilisateurs disent de LogicAI</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {TESTIMONIALS.map((t, i) => (
-                        <motion.div
-                            key={i}
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ delay: i * 0.1 }}
-                            className="p-8 rounded-2xl bg-bg-card border border-border-dark flex flex-col justify-between hover:border-white/20 transition-colors"
-                        >
-                            <div className="mb-8">
-                                <div className="flex text-brand-orange mb-4">
-                                    {[1, 2, 3, 4, 5].map(star => (
-                                        <svg key={star} className="size-4 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
-                                    ))}
-                                </div>
-                                <p className="text-lg leading-relaxed text-gray-300">"{t.quote}"</p>
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-4 mb-4">
-                                    <img src={t.image} alt={t.name} className="size-10 rounded-full object-cover border border-white/10" />
-                                    <div>
-                                        <div className="font-semibold">{t.name}</div>
-                                        <div className="text-sm text-gray-500">{t.role}</div>
-                                    </div>
-                                </div>
-                                <div className="inline-block px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-white">
-                                    {t.metric}
-                                </div>
-                            </div>
-                        </motion.div>
-                    ))}
+                
+                {/* Widget Trustpilot */}
+                <div className="flex justify-center">
+                    <div 
+                        className="trustpilot-widget" 
+                        data-locale="fr-FR" 
+                        data-template-id="56278e9abfbbba0bdcd568bc" 
+                        data-businessunit-id="6963f73c996fbae488146d55" 
+                        data-style-height="52px" 
+                        data-style-width="100%" 
+                        data-token="875a397d-13d6-4959-93d2-9898eb5a6528"
+                    >
+                        <a href="https://fr.trustpilot.com/review/logicai.fr" target="_blank" rel="noopener">
+                            Trustpilot
+                        </a>
+                    </div>
                 </div>
             </div>
         </section>
@@ -510,7 +499,7 @@ function Pricing() {
         const fetchUserPlan = async () => {
             if (user) {
                 try {
-                    const response = await fetch('http://localhost:5000/instances/subscription', {
+                    const response = await fetch(`${import.meta.env.VITE_API_URL}/instances/subscription`, {
                         credentials: 'include'
                     });
                     if (response.ok) {
@@ -585,10 +574,10 @@ function Pricing() {
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
                         transition={{ delay: i * 0.1 }}
-                        className={`relative p-8 rounded-2xl bg-bg-card border ${plan.popular ? 'border-brand-blue shadow-[0_0_40px_-10px_rgba(0,112,255,0.3)]' : 'border-border-dark'} flex flex-col h-full hover:scale-105 transition-transform duration-300`}
+                        className={`relative p-8 rounded-2xl bg-bg-card border ${plan.popular ? 'border-orange-500 shadow-[0_0_40px_-10px_rgba(255,165,0,0.3)]' : 'border-border-dark'} flex flex-col h-full hover:scale-105 transition-transform duration-300`}
                     >
                         {plan.popular && (
-                            <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-brand-blue text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                            <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                                 Plus populaire
                             </div>
                         )}
@@ -623,7 +612,7 @@ function Pricing() {
                             disabled={loadingPlan === plan.name || isDisabled}
                             className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
                                 isCurrentPlan
-                                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
                                     : isDisabled
                                     ? 'bg-white/5 text-gray-600 cursor-not-allowed'
                                     : plan.popular 
@@ -637,9 +626,9 @@ function Pricing() {
                                     <span>Redirection...</span>
                                 </>
                             ) : isCurrentPlan ? (
-                                'Plan actuel'
+                                `Votre offre`
                             ) : isLowerPlan ? (
-                                'Plan inférieur'
+                                `Choisir ${plan.name}`
                             ) : (
                                 `Choisir ${plan.name}`
                             )}

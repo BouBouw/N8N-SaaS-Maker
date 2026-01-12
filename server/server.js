@@ -8,6 +8,7 @@ const passport = require('./config/passport');
 const nodemailer = require('nodemailer');
 const initializeDatabase = require('./config/initDatabase');
 const autoSyncService = require('./services/autoSyncService');
+const pool = require('./config/database');
 require('dotenv').config();
 
 const app = express();
@@ -111,6 +112,17 @@ app.use('/api/v1', require('./routes/api'));
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Public stats endpoint
+app.get('/stats/public', async (req, res) => {
+    try {
+        const [totalInstances] = await pool.query('SELECT COUNT(*) as count FROM n8n_instances');
+        res.json({ totalInstances: totalInstances[0].count });
+    } catch (error) {
+        console.error('Error getting public stats:', error);
+        res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
+    }
 });
 
 // 404 handler

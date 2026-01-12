@@ -42,7 +42,7 @@ class ActivityService {
                     i.subdomain as instance_subdomain
                  FROM activities a
                  LEFT JOIN n8n_instances i ON a.instance_id = i.id
-                 WHERE a.user_id = ? AND a.action = 'workflow_executed'
+                 WHERE a.user_id = ?
                  ORDER BY a.created_at DESC
                  LIMIT ?`,
                 [userId, limit]
